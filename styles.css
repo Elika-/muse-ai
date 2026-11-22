@@ -298,3 +298,16 @@ main { padding: 0 48px 96px; }
   .nav .search input { text-align: left; font-size: 14px; }
   .feed-top { height: 24px; }
 }
+
+/* Real products: shop links, disclosure, studio product form */
+.product-shop { margin-top: 4px; font: 500 11px/1.4 var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--fg); }
+.product-sample { margin-top: 4px; font: 400 11px/1.4 var(--sans); letter-spacing: .14em; text-transform: uppercase; color: #9a9a9a; }
+.disclosure { margin-top: 12px; font-size: 12px; line-height: 1.5; color: #8a8a8a; }
+.prod-box { border-top: 1px solid var(--line); padding-top: 8px; }
+.prod-box summary { cursor: pointer; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.prod-row { display: flex; gap: 8px; align-items: baseline; font-size: 13px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.prod-row .grow { flex: 1; min-width: 0; }
+.prod-row em { font-style: normal; font-size: 11px; color: var(--muted); margin-left: 4px; }
+.prod-form { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.prod-form input { font: inherit; font-size: 13px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 2px; background: var(--bg); color: var(--fg); }
+.prod-form input:focus { outline: 0; border-color: var(--fg); }

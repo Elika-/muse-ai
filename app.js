@@ -72,9 +72,10 @@
       ]);
       if (e1 || e2 || !cs?.length) throw e1 || e2 || new Error("empty");
       const bySlugId = Object.fromEntries(cs.map(c => [c.id, c.slug]));
-      PRODUCTS = Object.fromEntries((prs || []).filter(p => bySlugId[p.brand_id]).map(p => [p.id, {
-        id: p.id, brand: bySlugId[p.brand_id], name: p.name, category: p.category,
-        price: money(p.price_cents, p.currency), img: p.image_url, url: p.product_url
+      PRODUCTS = Object.fromEntries((prs || []).filter(p => bySlugId[p.brand_id] || p.brand_name).map(p => [p.id, {
+        id: p.id, brand: bySlugId[p.brand_id] || null, brandName: p.brand_name || "", name: p.name, category: p.category,
+        price: money(p.price_cents, p.currency), img: p.image_url, buy: p.affiliate_url || null,
+        merchant: p.merchant || "", sample: !!p.is_sample
       }]));
       TAGS = {};
       (tags || []).forEach(t => { if (PRODUCTS[t.product_id]) (TAGS[t.pin_id] ||= []).push(t.product_id); });
@@ -200,14 +201,18 @@
   }
 
   function productCard(pr) {
-    const b = C[pr.brand];
-    return `<a class="product" href="#/c/${pr.brand}">
+    const brandName = pr.brandName || C[pr.brand]?.name || "";
+    const inner = `
       <div class="product-img"><img src="${esc(pr.img)}" alt="${esc(pr.name)}" loading="lazy"></div>
-      <div class="product-cat">${bagIcon}${esc(pr.category)}</div>
-      <div class="product-brand">${esc(b?.name)}</div>
+      <div class="product-cat">${esc(pr.category)}</div>
+      <div class="product-brand">${esc(brandName)}</div>
       <div class="product-name">${esc(pr.name)}</div>
       <div class="product-price">${esc(pr.price)}</div>
-    </a>`;
+      ${pr.buy ? `<div class="product-shop">Shop${pr.merchant ? ` at ${esc(pr.merchant)}` : ""} ↗</div>`
+               : pr.sample ? `<div class="product-sample">Sample</div>` : ""}`;
+    if (pr.buy) return `<a class="product" href="${esc(pr.buy)}" target="_blank" rel="sponsored noopener noreferrer">${inner}</a>`;
+    if (pr.brand) return `<a class="product" href="#/c/${pr.brand}">${inner}</a>`;
+    return `<div class="product">${inner}</div>`;
   }
 
   function followRow(c, label) {
@@ -255,7 +260,9 @@
     const more = PINS.filter(x => x.character === c.id && x.id !== id).slice(0, 6);
     const f = following.has(c.id);
     const look = (TAGS[id] || []).map(x => PRODUCTS[x]).filter(Boolean);
-    const brands = [...new Set(look.map(x => x.brand))].map(b => C[b]).filter(Boolean);
+    const brands = [...new Set(look.map(x => x.brand).filter(Boolean))].map(b => C[b]).filter(Boolean);
+    const hasAffiliate = look.some(x => x.buy);
+    const hasSample = look.some(x => x.sample);
     modalBody.innerHTML = `
       <div class="modal-img"><img src="${esc(p.src)}" alt="${esc(p.caption)}"></div>
       <div class="modal-side">
@@ -268,6 +275,8 @@
         ${look.length ? `
         <div class="more-label shop-label">Shop the look</div>
         <div class="product-grid">${look.map(productCard).join("")}</div>
+        ${hasAffiliate ? `<p class="disclosure">Some links are affiliate links. We may earn a commission when you buy, at no extra cost to you.</p>` : ""}
+        ${hasSample ? `<p class="disclosure">Pieces marked Sample are illustrations; shop links are on the way.</p>` : ""}
         <div class="who-list">
           ${brands.map(b => followRow(b, "Brand")).join("")}
           ${followRow(c, `AI character · by ${c.creator}`)}
@@ -373,6 +382,34 @@
       allowance()
     ]);
     const live = (pins || []).filter(p => p.status === "live").length;
+    const pinIds = (pins || []).map(p => p.id);
+    const tagged = {};
+    if (pinIds.length) {
+      const { data: rows } = await sb.from("pin_products").select("pin_id, product_id, products(id, name, brand_name, merchant, affiliate_url, is_sample, brand_id)").in("pin_id", pinIds);
+      (rows || []).forEach(r => r.products && (tagged[r.pin_id] ||= []).push(r.products));
+    }
+    const productsBlock = p => {
+      const list = tagged[p.id] || [];
+      return `<details class="prod-box">
+        <summary>Products (${list.length})</summary>
+        ${list.map(pr => `<div class="prod-row">
+          <span class="grow">${esc(pr.brand_name || PRODUCTS[pr.id] && (C[PRODUCTS[pr.id].brand]?.name) || "")} · ${esc(pr.name)}
+            ${pr.affiliate_url ? `<em>linked</em>` : pr.is_sample ? `<em>sample</em>` : ""}</span>
+          <button class="link" data-untag="${p.id}|${pr.id}">Remove</button>
+        </div>`).join("")}
+        <form class="prod-form" data-pin-form="${p.id}">
+          <input name="brand" placeholder="Brand (e.g. Loro Piana)" required>
+          <input name="name" placeholder="Product name" required>
+          <input name="category" placeholder="Category (Coat, Shoes…)">
+          <input name="price" placeholder="Price in USD" inputmode="decimal">
+          <input name="image" type="url" placeholder="Product image URL (https://…)" required>
+          <input name="link" type="url" placeholder="Affiliate link (https://…)" required>
+          <input name="merchant" placeholder="Store (e.g. Mr Porter)">
+          <button class="btn btn-dark sm" type="submit">Add product</button>
+          <p class="note"></p>
+        </form>
+      </details>`;
+    };
     const canUpload = !!cfg.UPLOAD_URL && quota.left > 0;
     const dropText = !cfg.UPLOAD_URL
       ? "Uploads open once the image service is connected."
@@ -407,6 +444,7 @@
             <button class="btn btn-line sm" data-avatar="${c.id}" data-url="${esc(p.image_url)}">Set as profile</button>
             <button class="icon-btn" data-del="${p.id}" aria-label="Delete image"><svg viewBox="0 0 24 24" width="16" height="16"><path d="M5 7h14M10 11v6M14 11v6M6 7l1 12h10l1-12M9 7V4h6v3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
           </div>
+          ${productsBlock(p)}
         </div>`).join("")}
       </section>` : ""}`;
     app.dataset.char = c.id;
@@ -545,6 +583,13 @@
       await Promise.all([manageView(app.dataset.slug), loadPublic()]);
       return;
     }
+    const untag = t.closest("[data-untag]");
+    if (untag) {
+      const [pinId, prodId] = untag.dataset.untag.split("|");
+      await sb.from("pin_products").delete().eq("pin_id", pinId).eq("product_id", prodId);
+      await Promise.all([manageView(app.dataset.slug), loadPublic()]);
+      return;
+    }
     const av = t.closest("[data-avatar]");
     if (av) {
       await sb.from("characters").update({ avatar_url: av.dataset.url }).eq("id", av.dataset.avatar);
@@ -593,6 +638,23 @@
       const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: `${location.origin}${location.pathname}?next=studio` } });
       msg.textContent = error ? error.message : `Check ${email} for your sign-in link.`;
       f.querySelector("button").disabled = false;
+    }
+    if (f.dataset.pinForm) {
+      const note = f.querySelector(".note");
+      const v = k => f[k].value.trim();
+      if (!/^https:\/\//i.test(v("link")) || !/^https:\/\//i.test(v("image"))) { note.textContent = "Links must start with https://"; return; }
+      const price = v("price") ? Math.round(parseFloat(v("price").replace(/[^0-9.]/g, "")) * 100) : null;
+      f.querySelector("button").disabled = true;
+      const { data: prod, error } = await sb.from("products").insert({
+        creator_id: session.user.id, brand_name: v("brand"), name: v("name"), category: v("category"),
+        price_cents: Number.isFinite(price) ? price : null, image_url: v("image"),
+        affiliate_url: v("link"), merchant: v("merchant") || null, is_sample: false
+      }).select("id").single();
+      if (error) { note.textContent = error.message; f.querySelector("button").disabled = false; return; }
+      const { error: e2 } = await sb.from("pin_products").insert({ pin_id: f.dataset.pinForm, product_id: prod.id, position: Date.now() % 1e6 });
+      if (e2) { note.textContent = e2.message; f.querySelector("button").disabled = false; return; }
+      await Promise.all([manageView(app.dataset.slug), loadPublic()]);
+      return;
     }
     if (f.id === "newchar") {
       const msg = document.getElementById("newchar-msg");
