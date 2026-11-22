@@ -17,7 +17,21 @@
     get(k) { try { return JSON.parse(localStorage.getItem(k)) || []; } catch { return []; } },
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
   };
-  let saved = new Set(store.get("muse.saved"));
+  let saved = new Set();
+  function toast(text) {
+    let el = document.getElementById("toast");
+    if (!el) { el = document.createElement("div"); el.id = "toast"; el.className = "toast"; el.setAttribute("role", "status"); document.body.appendChild(el); }
+    el.textContent = text;
+    el.classList.add("show");
+    clearTimeout(el._t);
+    el._t = setTimeout(() => el.classList.remove("show"), 2800);
+  }
+  async function loadSaves() {
+    saved = new Set();
+    if (!sb || !session) return;
+    const { data } = await sb.from("saves").select("pin_id");
+    (data || []).forEach(r => saved.add(r.pin_id));
+  }
   let following = new Set(store.get("muse.following"));
   let filter = "all";
 
@@ -274,7 +288,7 @@
       <section class="auth">
         <div class="eyebrow">Creator studio</div>
         <h1>Sign in</h1>
-        <p class="lead">Enter your email. We send a link; no password.</p>
+        <p class="lead">Save images, or build your own characters and brands. Enter your email and we send a link; no password.</p>
         <form id="signin" class="form narrow">
           <label for="signin-email">Email<input id="signin-email" type="email" name="email" required placeholder="you@studio.com" autocomplete="email"></label>
           <button class="btn btn-dark" type="submit">Send link</button>
@@ -482,9 +496,20 @@
     if (save) {
       e.stopPropagation();
       const id = save.dataset.save;
-      saved.has(id) ? saved.delete(id) : saved.add(id);
-      store.set("muse.saved", [...saved]);
-      document.querySelectorAll(`[data-save="${id}"]`).forEach(b => { b.classList.toggle("on", saved.has(id)); b.textContent = saved.has(id) ? "Saved" : "Save"; });
+      if (!sb) return;
+      if (!session) { closePin(); location.hash = "#/studio"; toast("Sign in to save images."); return; }
+      const was = saved.has(id);
+      const paint = () => document.querySelectorAll(`[data-save="${id}"]`).forEach(b => { b.classList.toggle("on", saved.has(id)); b.textContent = saved.has(id) ? "Saved" : "Save"; });
+      was ? saved.delete(id) : saved.add(id);
+      paint();
+      const { error } = was
+        ? await sb.from("saves").delete().eq("pin_id", id).eq("user_id", session.user.id)
+        : await sb.from("saves").insert({ pin_id: id });
+      if (error) {
+        was ? saved.add(id) : saved.delete(id);
+        paint();
+        toast(/row-level security/i.test(error.message) ? "You can't save your own images." : "Couldn't save. Try again.");
+      }
       return;
     }
     const fol = t.closest("[data-follow]");
@@ -614,8 +639,9 @@
     sb.auth.onAuthStateChange((_evt, s) => {
       const was = !!session;
       session = s;
-      if (!was && s && (location.hash || "").startsWith("#/studio")) route();
+      if (was !== !!s) loadSaves().then(() => { if (!was && s && (location.hash || "").startsWith("#/studio")) route(); });
     });
+    await loadSaves();
     const params = new URLSearchParams(location.search);
     if (params.get("next") === "studio") history.replaceState(null, "", `${location.pathname}#/studio`);
   }

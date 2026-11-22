@@ -153,6 +153,9 @@ main { padding: 0 32px 80px; }
 .who-row .h { font-size: 12px; color: var(--muted); }
 .who-row .btn { height: 34px; }
 
+.toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translate(-50%, 12px); background: var(--fg); color: var(--bg); font-size: 13px; padding: 10px 16px; border-radius: 4px; opacity: 0; pointer-events: none; transition: opacity .3s, transform .3s; z-index: 80; }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
 /* Studio */
 .lead { color: var(--muted); margin-top: 10px; }
 .auth { max-width: 440px; margin: 0 auto; padding: 72px 0 40px; text-align: center; }
