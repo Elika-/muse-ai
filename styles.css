@@ -311,3 +311,8 @@ main { padding: 0 48px 96px; }
 .prod-form { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
 .prod-form input { font: inherit; font-size: 13px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 2px; background: var(--bg); color: var(--fg); }
 .prod-form input:focus { outline: 0; border-color: var(--fg); }
+
+/* Google sign-in */
+.google-btn { gap: 10px; width: 100%; }
+.or { text-align: center; color: #9a9a9a; font-size: 12px; letter-spacing: .2em; text-transform: uppercase; margin: 4px 0 -4px; }
+.auth .form.narrow + .form.narrow { margin-top: 12px; }
