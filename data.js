@@ -16,17 +16,17 @@ window.CHARACTERS = [
     captions: ["Golden hour, indoors", "Hands tell the story", "Turtleneck season", "A laugh, unposed", "Low light study", "Close, closer"]
   },
   {
-    id: "noor",
-    name: "Noor",
-    handle: "@noor.frames",
+    id: "nila",
+    name: "Nila",
+    handle: "@nila.noir",
     creator: "Daniel Reyes",
     creatorHandle: "@reyes.lab",
-    tagline: "Painted backdrops, old-world stillness.",
-    bio: "Noor lives somewhere between a Dutch painting and a film still. Every frame is composed like a canvas.",
-    followers: "96.4K",
-    following: "88",
-    tags: ["Fine art", "Portrait", "Painterly"],
-    captions: ["Study in lilac", "The chair series", "Wind, indoors", "Shoulder light", "Canvas no. 5", "After the sitting"]
+    tagline: "Black dress, long gloves, one spotlight.",
+    bio: "Nila is a high-fashion AI muse. Monochrome studio, sharp tailoring and old-Hollywood glamour, never off duty.",
+    followers: "184K",
+    following: "96",
+    tags: ["Haute couture", "Studio", "Noir"],
+    captions: ["Shades on, lights low", "Opera gloves", "The column dress", "Ladder, no. 2", "White shirt, black lace", "Last look of the night"]
   },
   {
     id: "vera",
