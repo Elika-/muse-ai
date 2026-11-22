@@ -284,3 +284,17 @@ main { padding: 0 48px 96px; }
   .tag-r { font-size: 13px; }
   .pin-media .save { display: none; }
 }
+
+/* Header search (reference: underline field between wordmark and profile) */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.nav .search { flex: 1; max-width: 560px; margin: 0 auto; height: auto; padding: 0; background: none; border-radius: 0; border-bottom: 1px solid #e6e6e6; transition: border-color .3s; }
+.nav .search:focus-within { border-color: #0a0a0a; }
+.nav .search input { width: 100%; border: 0; outline: 0; background: transparent; font: 400 15px/1 var(--sans); color: var(--fg); padding: 10px 0; text-align: center; }
+.nav .search input::placeholder { color: #9a9a9a; }
+.feed-top { height: 56px; }
+@media (max-width: 900px) {
+  .nav { gap: 16px; }
+  .nav .search { max-width: none; }
+  .nav .search input { text-align: left; font-size: 14px; }
+  .feed-top { height: 24px; }
+}

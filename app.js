@@ -136,16 +136,14 @@
     const term = q.value.trim().toLowerCase();
     if (!term) return true;
     const c = C[p.character];
-    return [c.name, c.handle, c.creator, c.tagline, p.caption, ...c.tags].join(" ").toLowerCase().includes(term);
+    const pieces = (TAGS[p.id] || []).map(x => PRODUCTS[x]).filter(Boolean).flatMap(pr => [pr.name, pr.category, C[pr.brand]?.name]);
+    return term.split(/\s+/).every(w => [c.name, c.handle, c.creator, c.tagline, p.caption, ...c.tags, ...pieces].join(" ").toLowerCase().includes(w));
   }
 
   function home() {
     const pins = feedOrder().filter(p => (filter === "all" || p.character === filter) && matches(p));
     app.innerHTML = `
-      <nav class="names" aria-label="Characters">
-        <button class="name-link ${filter === "all" ? "on" : ""}" data-filter="all">All</button>
-        ${CHARS.filter(c => !isBrand(c)).map(c => `<button class="name-link ${filter === c.id ? "on" : ""}" data-filter="${c.id}">${esc(c.name)}</button>`).join("")}
-      </nav>
+      <div class="feed-top"></div>
       ${pins.length ? gridHTML(pins, 3) : `<p class="empty">Nothing matches “${esc(q.value)}”.</p>`}
       <footer class="foot"><a href="#/characters">Characters &amp; brands</a></footer>`;
   }
