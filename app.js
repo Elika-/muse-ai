@@ -273,11 +273,11 @@
     app.innerHTML = `
       <section class="auth">
         <div class="eyebrow">Creator studio</div>
-        <h1>Build your <em>muses</em>.</h1>
-        <p class="lead">Sign in to create AI characters and brands, upload images and choose what goes live.</p>
+        <h1>Sign in</h1>
+        <p class="lead">Enter your email. We send a link; no password.</p>
         <form id="signin" class="form narrow">
-          <label>Email<input type="email" name="email" required placeholder="you@studio.com" autocomplete="email"></label>
-          <button class="btn btn-dark" type="submit">Email me a sign-in link</button>
+          <label for="signin-email">Email<input id="signin-email" type="email" name="email" required placeholder="you@studio.com" autocomplete="email"></label>
+          <button class="btn btn-dark" type="submit">Send link</button>
           <p class="note" id="signin-msg">${esc(msg)}</p>
         </form>
       </section>`;
@@ -291,8 +291,8 @@
 
   async function studioHome() {
     app.innerHTML = `<p class="empty">Loading your studio…</p>`;
-    let mine = [];
-    try { mine = await myCharacters(); } catch (e) { app.innerHTML = `<p class="empty">Couldn't load your studio: ${esc(e.message)}</p>`; return; }
+    let mine = [], quota;
+    try { [mine, quota] = await Promise.all([myCharacters(), allowance()]); } catch (e) { app.innerHTML = `<p class="empty">Couldn't load your studio: ${esc(e.message)}</p>`; return; }
     const ids = mine.map(c => c.id);
     let counts = {};
     if (ids.length) {
@@ -308,6 +308,10 @@
         </div>
         <a class="btn btn-dark" href="#/studio/new">New character or brand</a>
       </section>
+      <div class="quota">
+        <div class="quota-bar"><span style="width:${Math.min(100, (quota.used / quota.allowance) * 100)}%"></span></div>
+        <p class="note">${allowanceLine(quota)}</p>
+      </div>
       ${mine.length ? `<section class="studio-list">
         ${mine.map(c => {
           const k = counts[c.id] || { live: 0, draft: 0 };
@@ -345,8 +349,17 @@
     app.innerHTML = `<p class="empty">Loading…</p>`;
     const { data: c } = await sb.from("characters").select("*").eq("slug", slug).eq("creator_id", session.user.id).maybeSingle();
     if (!c) { app.innerHTML = `<p class="empty">Not found in your studio. <a href="#/studio">Back</a></p>`; return; }
-    const { data: pins } = await sb.from("pins").select("*").eq("character_id", c.id).order("position").order("created_at");
+    const [{ data: pins }, quota] = await Promise.all([
+      sb.from("pins").select("*").eq("character_id", c.id).order("position").order("created_at"),
+      allowance()
+    ]);
     const live = (pins || []).filter(p => p.status === "live").length;
+    const canUpload = !!cfg.UPLOAD_URL && quota.left > 0;
+    const dropText = !cfg.UPLOAD_URL
+      ? "Uploads open once the image service is connected."
+      : quota.left > 0
+        ? `Drop files here or click. ${quota.left} image${quota.left === 1 ? "" : "s"} left. They start as drafts; you choose what goes live.`
+        : `You've used all ${quota.allowance} images. Every 10 points adds one more.`;
     app.innerHTML = `
       <section class="studio-head">
         <div>
@@ -359,11 +372,12 @@
           <a class="btn btn-line" href="#/c/${esc(c.slug)}">View public profile</a>
         </div>
       </section>
-      <label class="drop" id="drop">
-        <input type="file" id="files" accept="image/*" multiple hidden>
+      <label class="drop ${canUpload ? "" : "off"}" id="drop">
+        <input type="file" id="files" accept="image/*" multiple hidden ${canUpload ? "" : "disabled"}>
         <strong>Upload images</strong>
-        <span>Drop files here or click. They start as drafts; you choose what goes live.</span>
+        <span>${dropText}</span>
       </label>
+      <p class="note">${allowanceLine(quota)}</p>
       <p class="note" id="up-msg"></p>
       ${(pins || []).length ? `<section class="manage-grid">
         ${pins.map(p => `<div class="mcard ${p.status}">
@@ -395,11 +409,11 @@
     } catch { return file; }
   }
 
-  async function uploadFile(file) {
+  async function uploadFile(file, purpose = "pin") {
     const body = await shrink(file);
     const res = await fetch(`${cfg.UPLOAD_URL}/upload`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": body.type || file.type },
+      headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": body.type || file.type, "X-Muse-Purpose": purpose },
       body
     });
     const out = await res.json().catch(() => ({}));
@@ -410,22 +424,36 @@
   async function uploadPins(files) {
     const msg = document.getElementById("up-msg");
     const charId = app.dataset.char;
+    if (!cfg.UPLOAD_URL) { msg.textContent = "Uploads open once the image service is connected."; return; }
+    const quota = await allowance();
+    if (quota.left === 0) { msg.textContent = `You've used all ${quota.allowance} images. Every 10 points adds one more.`; return; }
+    const skipped = Math.max(0, files.length - quota.left);
+    files = files.slice(0, quota.left);
     let done = 0;
     for (const f of files) {
       msg.textContent = `Uploading ${done + 1} of ${files.length}…`;
       try {
         const url = await uploadFile(f);
         const { error } = await sb.from("pins").insert({ character_id: charId, creator_id: session.user.id, image_url: url, caption: "", status: "draft", position: Date.now() % 1e9 });
-        if (error) throw error;
+        if (error) throw /row-level security/i.test(error.message) ? new Error("Image allowance reached. Every 10 points adds one more.") : error;
         done++;
       } catch (e) { msg.textContent = `${f.name}: ${e.message}`; return; }
     }
     await manageView(app.dataset.slug);
-    document.getElementById("up-msg").textContent = `${done} image${done === 1 ? "" : "s"} uploaded as drafts.`;
+    document.getElementById("up-msg").textContent =
+      `${done} image${done === 1 ? "" : "s"} uploaded as drafts.` + (skipped ? ` ${skipped} not uploaded: allowance reached.` : "");
   }
 
+  async function allowance() {
+    const { data, error } = await sb.rpc("my_allowance");
+    if (error || !data) return { points: 0, allowance: 5, used: 0, left: 5 };
+    return { ...data, left: Math.max(0, data.allowance - data.used) };
+  }
+  const allowanceLine = a =>
+    `${a.used} of ${a.allowance} images used · ${a.points} points · every 10 points adds one image`;
+
   async function studio(sub) {
-    if (!sb || !cfg.UPLOAD_URL) { app.innerHTML = notReady; return; }
+    if (!sb) { app.innerHTML = notReady; return; }
     if (!session) return signInView();
     if (sub === "new") return newCharacterView();
     if (sub) return manageView(sub);
@@ -543,7 +571,7 @@
       f.querySelector("button[type=submit]").disabled = true;
       try {
         let avatar_url = null;
-        if (f.avatar.files[0]) { msg.textContent = "Uploading profile image…"; avatar_url = await uploadFile(f.avatar.files[0]); }
+        if (f.avatar.files[0] && cfg.UPLOAD_URL) { msg.textContent = "Uploading profile image…"; avatar_url = await uploadFile(f.avatar.files[0], "avatar"); }
         const slug = `${slugify(name) || "muse"}-${Math.random().toString(36).slice(2, 6)}`;
         const handle = f.handle.value.trim() || `@${slugify(name)}`;
         const { error } = await sb.from("characters").insert({
