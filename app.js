@@ -6,7 +6,8 @@
   const me = document.getElementById("me");
   const meIcon = me.innerHTML;
   async function paintMe() {
-    if (!session) { me.innerHTML = meIcon; me.classList.remove("on"); me.setAttribute("aria-label", "Sign in"); return; }
+    if (!session) { me.innerHTML = `<span class="signin">Sign in</span>`; me.className = "me out"; me.setAttribute("aria-label", "Sign in"); return; }
+    me.className = "me";
     const email = session.user.email || "";
     let avatar = null;
     const { data } = await sb.from("characters").select("avatar_url").eq("creator_id", session.user.id).not("avatar_url", "is", null).order("created_at").limit(1);
@@ -16,7 +17,7 @@
     me.setAttribute("aria-label", "Your studio");
   }
   const cfg = window.MUSE_CONFIG || {};
-  const ratios = ["3/4", "2/3", "4/5", "3/4", "1/1", "2/3", "4/5", "3/5"];
+  const ratios = ["3/4", "2/3", "3/4", "4/5", "2/3", "3/4"];
 
   // ---------- Supabase ----------
   const sb = cfg.SUPABASE_URL && window.supabase
@@ -95,7 +96,10 @@
 
   // Interleave characters so the feed mixes creators.
   function feedOrder() {
-    const lists = CHARS.filter(c => !isBrand(c)).map(c => PINS.filter(p => p.character === c.id));
+    // Alternate newest and oldest characters so the feed mixes looks.
+    const cs = CHARS.filter(c => !isBrand(c)), mixed = [];
+    for (let a = cs.length - 1, b = 0; b <= a; a--, b++) { mixed.push(cs[a]); if (a !== b) mixed.push(cs[b]); }
+    const lists = mixed.map(c => PINS.filter(p => p.character === c.id));
     const out = [], max = Math.max(0, ...lists.map(l => l.length));
     for (let i = 0; i < max; i++) lists.forEach(l => l[i] && out.push(l[i]));
     return out;
@@ -107,20 +111,16 @@
   function pinHTML(p, i) {
     const c = C[p.character];
     const n = (TAGS[p.id] || []).length;
+    const look = PINS.filter(x => x.character === p.character).indexOf(p) + 1;
     return `<article class="pin" data-pin="${p.id}" tabindex="0">
       <div class="pin-media" style="aspect-ratio:${ratios[i % ratios.length]}">
         <img src="${esc(p.src)}" alt="${esc(c.name)} — ${esc(p.caption)}" loading="lazy" onload="this.classList.add('ready')">
-        ${n ? `<span class="look-badge">${bagIcon}${n}</span>` : ""}
-        <div class="pin-hover">
-          <button class="save ${saved.has(p.id) ? "on" : ""}" data-save="${p.id}">${saved.has(p.id) ? "Saved" : "Save"}</button>
-          <span class="cap">${esc(p.caption)}</span>
-        </div>
+        <button class="save ${saved.has(p.id) ? "on" : ""}" data-save="${p.id}">${saved.has(p.id) ? "Saved" : "Save"}</button>
       </div>
-      <a class="pin-meta" href="#/c/${c.id}">
-        <img class="av" src="${esc(c.avatar)}" alt="">
-        <span class="name">${esc(c.name)}</span>
-        <span class="ai">${c.kind === "brand" ? "AI brand" : "AI"}</span>
-      </a>
+      <div class="pin-meta">
+        <a class="name" href="#/c/${c.id}">${esc(c.name)}</a>
+        <span class="tag-r">${n ? `${n} piece${n === 1 ? "" : "s"}` : `Look ${String(look).padStart(2, "0")}`}</span>
+      </div>
     </article>`;
   }
 
@@ -142,16 +142,11 @@
   function home() {
     const pins = feedOrder().filter(p => (filter === "all" || p.character === filter) && matches(p));
     app.innerHTML = `
-      <section class="hero">
-        <div class="eyebrow">For AI characters &amp; the humans behind them</div>
-        <h1>Collect the <em>muses</em><br>of a new medium.</h1>
-        <p>Follow AI characters and brands. See every frame their creators publish, all in one place.</p>
-      </section>
-      <div class="chips">
-        <button class="chip ${filter === "all" ? "on" : ""}" data-filter="all">All</button>
-        ${CHARS.filter(c => !isBrand(c)).map(c => `<button class="chip ${filter === c.id ? "on" : ""}" data-filter="${c.id}">${esc(c.name)}</button>`).join("")}
-      </div>
-      ${pins.length ? gridHTML(pins) : `<p class="empty">Nothing matches “${esc(q.value)}”.</p>`}
+      <nav class="names" aria-label="Characters">
+        <button class="name-link ${filter === "all" ? "on" : ""}" data-filter="all">All</button>
+        ${CHARS.filter(c => !isBrand(c)).map(c => `<button class="name-link ${filter === c.id ? "on" : ""}" data-filter="${c.id}">${esc(c.name)}</button>`).join("")}
+      </nav>
+      ${pins.length ? gridHTML(pins, 3) : `<p class="empty">Nothing matches “${esc(q.value)}”.</p>`}
       <footer class="foot"><a href="#/characters">Characters &amp; brands</a></footer>`;
   }
 
@@ -568,7 +563,7 @@
     const chip = t.closest("[data-filter]");
     if (chip) { filter = chip.dataset.filter; home(); return; }
     if (t.closest("[data-close]")) { closePin(); return; }
-    if (t.closest(".pin-meta")) return;
+    if (t.closest(".pin-meta a")) return;
     const pin = t.closest("[data-pin]");
     if (pin) openPin(pin.dataset.pin);
   });
@@ -655,6 +650,8 @@
     });
     await loadSaves();
     paintMe();
+  } else {
+    me.innerHTML = `<span class="signin">Sign in</span>`; me.className = "me out";
     const params = new URLSearchParams(location.search);
     if (params.get("next") === "studio") history.replaceState(null, "", `${location.pathname}#/studio`);
   }
