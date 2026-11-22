@@ -19,12 +19,17 @@ img { display: block; max-width: 100%; }
 /* Nav */
 .nav {
   position: sticky; top: 0; z-index: 20;
-  display: flex; align-items: center; gap: 28px;
+  display: flex; align-items: center; justify-content: space-between; gap: 28px;
   height: 68px; padding: 0 32px;
   background: rgba(255,255,255,0.92); backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--line);
 }
 .logo { font: 400 30px/1 var(--serif); letter-spacing: -0.01em; }
+.me { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; border: 1px solid var(--line); color: var(--muted); overflow: hidden; flex: none; transition: border-color .2s, color .2s; }
+.me:hover, .me:focus-visible { border-color: var(--fg); color: var(--fg); }
+.me img { width: 100%; height: 100%; object-fit: cover; }
+.me .initial { font: 400 17px/1 var(--serif); color: var(--fg); }
+.me.on { border-color: var(--fg); }
 .nav-links { display: flex; gap: 22px; }
 .nav-links a { color: var(--muted); font-weight: 500; transition: color .15s; }
 .nav-links a.active, .nav-links a:hover { color: var(--fg); }

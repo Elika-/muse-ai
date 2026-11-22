@@ -2,7 +2,19 @@
   const app = document.getElementById("app");
   const modal = document.getElementById("modal");
   const modalBody = modal.querySelector(".modal-body");
-  const q = document.getElementById("q");
+  const q = document.getElementById("q") || { value: "", addEventListener() {} };
+  const me = document.getElementById("me");
+  const meIcon = me.innerHTML;
+  async function paintMe() {
+    if (!session) { me.innerHTML = meIcon; me.classList.remove("on"); me.setAttribute("aria-label", "Sign in"); return; }
+    const email = session.user.email || "";
+    let avatar = null;
+    const { data } = await sb.from("characters").select("avatar_url").eq("creator_id", session.user.id).not("avatar_url", "is", null).order("created_at").limit(1);
+    if (data?.[0]?.avatar_url) avatar = data[0].avatar_url;
+    me.innerHTML = avatar ? `<img src="${esc(avatar)}" alt="">` : `<span class="initial">${esc((email[0] || "·").toUpperCase())}</span>`;
+    me.classList.add("on");
+    me.setAttribute("aria-label", "Your studio");
+  }
   const cfg = window.MUSE_CONFIG || {};
   const ratios = ["3/4", "2/3", "4/5", "3/4", "1/1", "2/3", "4/5", "3/5"];
 
@@ -140,7 +152,7 @@
         ${CHARS.filter(c => !isBrand(c)).map(c => `<button class="chip ${filter === c.id ? "on" : ""}" data-filter="${c.id}">${esc(c.name)}</button>`).join("")}
       </div>
       ${pins.length ? gridHTML(pins) : `<p class="empty">Nothing matches “${esc(q.value)}”.</p>`}
-      <footer class="foot">Muse · MVP preview</footer>`;
+      <footer class="foot"><a href="#/characters">Characters &amp; brands</a></footer>`;
   }
 
   function characters() {
@@ -639,9 +651,10 @@
     sb.auth.onAuthStateChange((_evt, s) => {
       const was = !!session;
       session = s;
-      if (was !== !!s) loadSaves().then(() => { if (!was && s && (location.hash || "").startsWith("#/studio")) route(); });
+      if (was !== !!s) { paintMe(); loadSaves().then(() => { if (!was && s && (location.hash || "").startsWith("#/studio")) route(); }); }
     });
     await loadSaves();
+    paintMe();
     const params = new URLSearchParams(location.search);
     if (params.get("next") === "studio") history.replaceState(null, "", `${location.pathname}#/studio`);
   }
