@@ -26,7 +26,9 @@
   const slugify = s => String(s).toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
 
   // ---------- Data ----------
-  let CHARS = [], PINS = [], C = {};
+  let CHARS = [], PINS = [], C = {}, PRODUCTS = {}, TAGS = {};
+  const money = (cents, cur = "USD") => cents == null ? "" : new Intl.NumberFormat("en-US", { style: "currency", currency: cur, maximumFractionDigits: 0 }).format(cents / 100);
+  const isBrand = c => c?.kind === "brand";
   function useStatic() {
     CHARS = window.CHARACTERS.map(c => ({ ...c, kind: "character", avatar: `${window.IMG_BASE}/${c.id}-1.jpg` }));
     PINS = window.PINS.map(p => ({ ...p }));
@@ -35,12 +37,20 @@
   async function loadPublic() {
     if (!sb) return useStatic();
     try {
-      const [{ data: cs, error: e1 }, { data: ps, error: e2 }] = await Promise.all([
+      const [{ data: cs, error: e1 }, { data: ps, error: e2 }, { data: prs }, { data: tags }] = await Promise.all([
         sb.from("characters").select("*").eq("is_public", true).order("created_at"),
-        sb.from("pins").select("id, character_id, image_url, caption, position, created_at").eq("status", "live").order("position")
+        sb.from("pins").select("id, character_id, image_url, caption, position, created_at").eq("status", "live").order("position"),
+        sb.from("products").select("*").order("created_at"),
+        sb.from("pin_products").select("pin_id, product_id, position").order("position")
       ]);
       if (e1 || e2 || !cs?.length) throw e1 || e2 || new Error("empty");
       const bySlugId = Object.fromEntries(cs.map(c => [c.id, c.slug]));
+      PRODUCTS = Object.fromEntries((prs || []).filter(p => bySlugId[p.brand_id]).map(p => [p.id, {
+        id: p.id, brand: bySlugId[p.brand_id], name: p.name, category: p.category,
+        price: money(p.price_cents, p.currency), img: p.image_url, url: p.product_url
+      }]));
+      TAGS = {};
+      (tags || []).forEach(t => { if (PRODUCTS[t.product_id]) (TAGS[t.pin_id] ||= []).push(t.product_id); });
       CHARS = cs.map(c => ({
         id: c.slug, dbId: c.id, kind: c.kind, name: c.name, handle: c.handle, tagline: c.tagline, bio: c.bio,
         tags: c.tags || [], avatar: c.avatar_url, creator: c.creator_name, creatorHandle: c.creator_handle,
@@ -59,18 +69,22 @@
 
   // Interleave characters so the feed mixes creators.
   function feedOrder() {
-    const lists = CHARS.map(c => PINS.filter(p => p.character === c.id));
+    const lists = CHARS.filter(c => !isBrand(c)).map(c => PINS.filter(p => p.character === c.id));
     const out = [], max = Math.max(0, ...lists.map(l => l.length));
     for (let i = 0; i < max; i++) lists.forEach(l => l[i] && out.push(l[i]));
     return out;
   }
 
   // ---------- Public views ----------
+  const bagIcon = `<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path d="M6 8h12l-1 12H7L6 8zM9 8V6a3 3 0 0 1 6 0v2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>`;
+
   function pinHTML(p, i) {
     const c = C[p.character];
+    const n = (TAGS[p.id] || []).length;
     return `<article class="pin" data-pin="${p.id}" tabindex="0">
       <div class="pin-media" style="aspect-ratio:${ratios[i % ratios.length]}">
         <img src="${esc(p.src)}" alt="${esc(c.name)} — ${esc(p.caption)}" loading="lazy" onload="this.classList.add('ready')">
+        ${n ? `<span class="look-badge">${bagIcon}${n}</span>` : ""}
         <div class="pin-hover">
           <button class="save ${saved.has(p.id) ? "on" : ""}" data-save="${p.id}">${saved.has(p.id) ? "Saved" : "Save"}</button>
           <span class="cap">${esc(p.caption)}</span>
@@ -109,7 +123,7 @@
       </section>
       <div class="chips">
         <button class="chip ${filter === "all" ? "on" : ""}" data-filter="all">All</button>
-        ${CHARS.map(c => `<button class="chip ${filter === c.id ? "on" : ""}" data-filter="${c.id}">${esc(c.name)}</button>`).join("")}
+        ${CHARS.filter(c => !isBrand(c)).map(c => `<button class="chip ${filter === c.id ? "on" : ""}" data-filter="${c.id}">${esc(c.name)}</button>`).join("")}
       </div>
       ${pins.length ? gridHTML(pins) : `<p class="empty">Nothing matches “${esc(q.value)}”.</p>`}
       <footer class="foot">Muse · MVP preview</footer>`;
@@ -123,7 +137,9 @@
       </section>
       <section class="cards">
         ${CHARS.map(c => {
-          const ps = PINS.filter(p => p.character === c.id).slice(0, 3);
+          const ps = isBrand(c)
+            ? Object.values(PRODUCTS).filter(p => p.brand === c.id).map(p => ({ src: p.img }))
+            : PINS.filter(p => p.character === c.id);
           return `<a class="card" href="#/c/${c.id}">
             <div class="card-cover">${[0, 1, 2].map(i => ps[i] ? `<img src="${esc(ps[i].src)}" alt="">` : `<div class="ph"></div>`).join("")}</div>
             <div class="card-body">
@@ -139,6 +155,7 @@
   function profile(id, tab = "pins") {
     const c = C[id];
     if (!c) return home();
+    if (isBrand(c)) return brandProfile(c, tab);
     const all = PINS.filter(p => p.character === id);
     const pins = tab === "saved" ? PINS.filter(p => saved.has(p.id)) : all;
     const f = following.has(id);
@@ -163,12 +180,63 @@
       ${pins.length ? gridHTML(pins, 3, "profile-grid") : `<p class="empty">${tab === "saved" ? "No saved pins yet." : "No live pins yet."}</p>`}`;
   }
 
+  function productCard(pr) {
+    const b = C[pr.brand];
+    return `<a class="product" href="#/c/${pr.brand}">
+      <div class="product-img"><img src="${esc(pr.img)}" alt="${esc(pr.name)}" loading="lazy"></div>
+      <div class="product-cat">${bagIcon}${esc(pr.category)}</div>
+      <div class="product-brand">${esc(b?.name)}</div>
+      <div class="product-name">${esc(pr.name)}</div>
+      <div class="product-price">${esc(pr.price)}</div>
+    </a>`;
+  }
+
+  function followRow(c, label) {
+    const f = following.has(c.id);
+    return `<div class="who-row">
+      <a href="#/c/${c.id}"><img class="av" src="${esc(c.avatar)}" alt=""></a>
+      <a href="#/c/${c.id}" class="grow"><div class="n">${esc(c.name)}</div><div class="h">${esc(label)}</div></a>
+      <button class="btn ${f ? "btn-line on" : "btn-dark"}" data-follow="${c.id}">${f ? "Following" : "Follow"}</button>
+    </div>`;
+  }
+
+  function brandProfile(c, tab) {
+    const products = Object.values(PRODUCTS).filter(p => p.brand === c.id);
+    const ids = new Set(products.map(p => p.id));
+    const worn = PINS.filter(p => (TAGS[p.id] || []).some(x => ids.has(x)));
+    const f = following.has(c.id);
+    const showWorn = tab === "saved";
+    app.innerHTML = `
+      <section class="profile">
+        <img class="av-xl" src="${esc(c.avatar)}" alt="${esc(c.name)}">
+        <h1>${esc(c.name)}</h1>
+        <div class="handle">${esc(c.handle)}</div>
+        <div class="badge">AI brand · created by <b>${esc(c.creator)}</b> ${esc(c.creatorHandle)}</div>
+        <p class="bio">${esc(c.bio)}</p>
+        <div class="stats"><span><b>${esc(c.followers)}</b> followers</span><span><b>${products.length}</b> products</span><span><b>${worn.length}</b> looks</span></div>
+        <div class="actions">
+          <button class="btn ${f ? "btn-line on" : "btn-dark"}" data-follow="${c.id}">${f ? "Following" : "Follow"}</button>
+          <button class="btn btn-line" data-share>Share</button>
+        </div>
+        <div class="tags">${c.tags.map(t => `<span class="tag">${esc(t)}</span>`).join("")}</div>
+      </section>
+      <nav class="tabs">
+        <a class="tab ${!showWorn ? "on" : ""}" href="#/c/${c.id}">Products</a>
+        <a class="tab ${showWorn ? "on" : ""}" href="#/c/${c.id}/saved">Worn by</a>
+      </nav>
+      ${showWorn
+        ? (worn.length ? gridHTML(worn, 3, "profile-grid") : `<p class="empty">No looks yet.</p>`)
+        : (products.length ? `<section class="product-grid wide">${products.map(productCard).join("")}</section>` : `<p class="empty">No products yet.</p>`)}`;
+  }
+
   function openPin(id) {
     const p = PINS.find(x => x.id === id);
     if (!p) return;
     const c = C[p.character];
     const more = PINS.filter(x => x.character === c.id && x.id !== id).slice(0, 6);
     const f = following.has(c.id);
+    const look = (TAGS[id] || []).map(x => PRODUCTS[x]).filter(Boolean);
+    const brands = [...new Set(look.map(x => x.brand))].map(b => C[b]).filter(Boolean);
     modalBody.innerHTML = `
       <div class="modal-img"><img src="${esc(p.src)}" alt="${esc(p.caption)}"></div>
       <div class="modal-side">
@@ -178,11 +246,18 @@
         </div>
         <h2>${esc(p.caption || c.name)}</h2>
         <p class="sub">${esc(c.tagline)} · ${p.saves.toLocaleString()} saves</p>
+        ${look.length ? `
+        <div class="more-label shop-label">Shop the look</div>
+        <div class="product-grid">${look.map(productCard).join("")}</div>
+        <div class="who-list">
+          ${brands.map(b => followRow(b, "Brand")).join("")}
+          ${followRow(c, `AI character · by ${c.creator}`)}
+        </div>` : `
         <div class="who">
           <a href="#/c/${c.id}"><img class="av" src="${esc(c.avatar)}" alt=""></a>
           <a href="#/c/${c.id}"><div class="n">${esc(c.name)}</div><div class="h">AI · by ${esc(c.creator)}</div></a>
           <button class="btn ${f ? "btn-line on" : "btn-dark"}" data-follow="${c.id}">${f ? "Following" : "Follow"}</button>
-        </div>
+        </div>`}
         ${more.length ? `<div class="more-label">More from ${esc(c.name)}</div>
         <div class="more">${more.map(m => `<img src="${esc(m.src)}" alt="${esc(m.caption)}" data-pin="${m.id}">`).join("")}</div>` : ""}
       </div>`;
