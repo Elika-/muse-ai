@@ -282,5 +282,5 @@ main { padding: 0 48px 96px; }
   .pin-meta { padding-top: 10px; }
   .pin-meta .name { font-size: 14px; }
   .tag-r { font-size: 13px; }
-  .pin-media .save { opacity: 1; height: 28px; padding: 0 10px; top: 8px; right: 8px; }
+  .pin-media .save { display: none; }
 }
